@@ -1,0 +1,6 @@
+interface=tun
+listen-address=127.0.0.1:53
+
+# Your domain names and IP addresses go here...
+domain=my-local-network.com
+ip_address=192.168.0.120:8096

@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  traefik:
+    image: traefik:v2.8
+    command:
+      - "--api.insecure=false"                # Disable insecure Traefik dashboard (optional)
+      - "--providers.docker=true"             # Enable Docker provider
+      - "--entrypoints.web.address=:80"       # Define HTTP entrypoint
+      - "--entrypoints.websecure.address=:443" # Define HTTPS entrypoint
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"  # Redirect HTTP to HTTPS
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+      - "--certificatesresolvers.myresolver.acme.httpchallenge=true"  # Use HTTP challenge for certs
+      - "--certificatesresolvers.myresolver.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.myresolver.acme.email=info@schaetz.com"  # Your email for Let's Encrypt
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json" # Store certs
+    ports:
+      - "80:80"                               # HTTP port (will redirect to HTTPS)
+      - "443:443"                             # HTTPS port
+      - "8080:8080"                           # Traefik dashboard port (optional)
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"  # Access Docker socket
+      - "./letsencrypt:/letsencrypt"          # Mount to store SSL certs
+
+  pihole:
+    image: pihole/pihole:latest
+    environment:
+      TZ: 'Europe/London'                     # Set timezone
+      WEBPASSWORD: 'your_secure_password'      # Admin password for Pi-hole
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.pihole.rule=Host(`domain1.com`)"
+      - "traefik.http.routers.pihole.entrypoints=websecure"  # Use HTTPS
+      - "traefik.http.routers.pihole.tls.certresolver=myresolver" # Use Let's Encrypt resolver
+      - "traefik.http.services.pihole.loadbalancer.server.port=80" # Pi-hole's internal port
+    volumes:
+      - "./pihole/etc-pihole/:/etc/pihole/"   # Persist Pi-hole settings
+      - "./pihole/etc-dnsmasq.d/:/etc/dnsmasq.d/"  # Persist DNS settings
+    dns:
+      - 127.0.0.1                             # Use Pi-hole DNS internally
+      - 1.1.1.1                               # Fallback to Cloudflare's DNS
+    ports:
+      - "53:53/tcp"                           # DNS port
+      - "53:53/udp"                           # DNS port
+      - "67:67/udp"                           # DHCP port (optional)
+    cap_add:
+      - NET_ADMIN                             # Needed for DHCP
+
+  nginx2:
+    image: nginx:latest
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.nginx2.rule=Host(`domain2.com`)"
+      - "traefik.http.routers.nginx2.entrypoints=websecure"  # Use HTTPS
+      - "traefik.http.routers.nginx2.tls.certresolver=myresolver" # Use Let's Encrypt resolver
+      - "traefik.http.services.nginx2.loadbalancer.server.port=80" # Nginx's internal port
+
+networks:
+  default:
+    external:
+      name: traefik

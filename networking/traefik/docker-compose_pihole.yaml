@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  traefik:
+    image: traefik:v2.8
+    command:
+      - "--api.insecure=true"                  # Enable the Traefik dashboard
+      - "--providers.docker=true"              # Enable Docker provider
+      - "--entrypoints.web.address=:80"        # Define the entrypoint for HTTP
+      - "--entrypoints.websecure.address=:443" # Define the entrypoint for HTTPS (optional)
+    ports:
+      - "80:80"                                # Expose HTTP port
+      - "8080:8080"                            # Expose Traefik dashboard port
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock" # Allow Traefik to access Docker socket
+
+  pihole:
+    image: pihole/pihole:latest
+    environment:
+      TZ: 'Europe/London'                     # Set the correct timezone for your location
+      WEBPASSWORD: 'your_secure_password'      # Set a password for the Pi-hole admin interface
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.pihole.rule=Host(`domain1.com`)"
+      - "traefik.http.services.pihole.loadbalancer.server.port=80" # Port 80 inside Pi-hole
+    volumes:
+      - "./pihole/etc-pihole/:/etc/pihole/"   # Persist Pi-hole configurations
+      - "./pihole/etc-dnsmasq.d/:/etc/dnsmasq.d/" # Persist DNS settings
+    dns:
+      - 127.0.0.1                             # Use Pi-hole DNS internally
+      - 1.1.1.1                               # Or fallback to Cloudflare's DNS
+    ports:
+      - "53:53/tcp"                           # Pi-hole DNS server port
+      - "53:53/udp"                           # Pi-hole DNS server port
+      - "67:67/udp"                           # Pi-hole DHCP server port (optional)
+    cap_add:
+      - NET_ADMIN                             # Needed for DHCP if enabled
+
+  nginx2:
+    image: nginx:latest
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.nginx2.rule=Host(`domain2.com`)"
+      - "traefik.http.services.nginx2.loadbalancer.server.port=80" # Port 80 inside Nginx container
+
+networks:
+  default:
+    external:
+      name: traefik
